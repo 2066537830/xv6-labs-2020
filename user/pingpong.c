@@ -11,7 +11,7 @@ int main(int argc, char* argv[])
         printf("pipe error\n");
         exit(-1);
     }
-    int pid=fork();  // 创建一个子进程
+    int pid=fork();  // 创建一个子进程  vx6中类型定义不太一样 Linux中fork的返回值是 pid_t 类型
     // 父进程中，pid是返回的子进程的PID
     // 子进程中，Pid返回值为0
     // 失败时，返回值为-1
@@ -25,18 +25,20 @@ int main(int argc, char* argv[])
         write(fd1[1], &nums, sizeof(nums));
         close(fd1[1]);
         int n=read(fd2[0], &nums, sizeof(nums));
+        close(fd2[0]);
         if(n<0){
             printf("father read error\n");
             exit(-1);
         }
         printf("%d: received pong\n", getpid());
         wait(0);    // 让父进程等待其子进程终止
+        exit(0);
     }
     else{ 
         // 子进程向管道中读数据
         int nums;
         int n=read(fd1[0], &nums, sizeof(nums));
-        
+        close(fd1[0]);
         if(n<0){
             printf("son read error\n");
             exit(-1);
@@ -48,7 +50,4 @@ int main(int argc, char* argv[])
         close(fd2[1]);
         exit(0);
     }
-    close(fd1[0]);
-    close(fd2[0]);
-    exit(0);
 }
