@@ -1,6 +1,11 @@
 struct stat;
 struct rtcdate;
 
+#define STDIN_FILENO  0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+
+
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
