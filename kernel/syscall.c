@@ -9,7 +9,7 @@
 
 // 1.系统调用参数获取
 // Fetch the uint64 at addr from the current process.
-// 从用户空间安全地获取地址值
+// 检查用户地址的安全性，搭配argaddr()使用
 int
 fetchaddr(uint64 addr, uint64 *ip)
 {
@@ -23,7 +23,7 @@ fetchaddr(uint64 addr, uint64 *ip)
 
 // Fetch the nul-terminated string at addr from the current process.
 // Returns length of string, not including nul, or -1 for error.
-// 从用户空间安全地获取字符串
+// 检查从用户空间获取字符串的安全性
 int
 fetchstr(uint64 addr, char *buf, int max)
 {
@@ -110,6 +110,7 @@ extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 extern uint64 sys_trace(void);
+extern uint64 sys_sysinfo(void);
 
 // 2.系统调用表管理
 /*static: 限制该数组只在当前文件可见
@@ -139,6 +140,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_trace]   sys_trace,
+[SYS_sysinfo] sys_sysinfo,
 };
 
 // 系统调用名称数组
@@ -165,6 +167,7 @@ static char *syscall_names[] = {
 [SYS_mkdir]   "mkdir",
 [SYS_close]   "close",
 [SYS_trace]   "trace",
+[SYS_sysinfo] "sysinfo",
 };
 
 // 3.系统调用分发

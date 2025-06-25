@@ -9,6 +9,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -108,5 +109,23 @@ sys_trace(void)
     return -1;
   }
   myproc()->trace_mask=mask;
+  return 0;
+}
+
+// 统计系统信息
+uint64
+sys_sysinfo(void)
+{
+  // 获取用户调用该系统调用的传入参数，由于传入的是一个地址，所以需要用一个unit64来接受
+  uint64 uaddr;
+  if(argaddr(0, &uaddr) < 0){   // 参数 0 代表从a0寄存器读取 传入参数保存到 a0-a5
+    return -1;
+  }
+  struct sysinfo sysinfo;
+  sysinfo.freemem = kcalc_freemem();
+  sysinfo.nproc = active_procs();
+  if(copyout(myproc()->pagetable, uaddr, (char*)&sysinfo, sizeof(sysinfo)) < 0){
+    return -1;
+  }
   return 0;
 }

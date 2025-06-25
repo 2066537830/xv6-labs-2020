@@ -8,7 +8,7 @@
 
 struct cpu cpus[NCPU];
 
-struct proc proc[NPROC];
+struct proc proc[NPROC];    // 全局进程表数组
 
 struct proc *initproc;
 
@@ -21,18 +21,18 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
-// initialize the proc table at boot time.
+// 系统启动时负责初始化进程表和为每个进程分配内核栈
 void
 procinit(void)
 {
   struct proc *p;
   
   initlock(&pid_lock, "nextpid");
-  for(p = proc; p < &proc[NPROC]; p++) {
+  for(p = proc; p < &proc[NPROC]; p++) {  // 遍历全局进程表数组，为每个PCB执行初始化
       initlock(&p->lock, "proc");
 
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
+      // 为每个进程分配一个物理页面(4KB)作为内核栈，每个进程都有独立的内核栈，用于系统调用和中断处理
+      // 将物理内存页映射到高地址的内核空间
       // guard page.
       char *pa = kalloc();
       if(pa == 0)
@@ -702,4 +702,15 @@ procdump(void)
   }
 }
 
-
+// 统计获取运行的进程数
+uint64 
+active_procs(void)
+{
+  uint64 procs_num=0;
+  for(int i=0; i<NPROC; i++){
+    if(proc[i].state == RUNNING || proc[i].state == SLEEPING || proc[i].state == RUNNABLE){
+      procs_num++;
+    }
+  }
+  return procs_num;
+}
