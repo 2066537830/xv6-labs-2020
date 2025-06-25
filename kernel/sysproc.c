@@ -1,3 +1,6 @@
+// 与进程相关的系统调用处理函数 
+// 采用相同的签名uint64 sys_xxx(void)
+
 #include "types.h"
 #include "riscv.h"
 #include "defs.h"
@@ -94,4 +97,16 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void)
+{
+  // 允许用户程序通过 trace(mask) 来设置当前进程的追踪掩码
+  int mask;
+  if(argint(0, &mask)<0){   // argint() - 获取整数参数
+    return -1;
+  }
+  myproc()->trace_mask=mask;
+  return 0;
 }

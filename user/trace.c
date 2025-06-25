@@ -14,7 +14,7 @@ main(int argc, char *argv[])
     exit(1);
   }
 
-  if (trace(atoi(argv[1])) < 0) {
+  if (trace(atoi(argv[1])) < 0) {   // trace系统调用，设置要跟踪的系统调用号掩码
     fprintf(2, "%s: trace failed\n", argv[0]);
     exit(1);
   }

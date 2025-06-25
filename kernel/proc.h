@@ -82,7 +82,7 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-// Per-process state
+// 进程结构体
 struct proc {
   struct spinlock lock;
 
@@ -103,4 +103,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  
+  int trace_mask;              // 表示当前进程要追踪哪些 syscall，使用 bitmask 方式
 };

@@ -7,7 +7,9 @@
 #include "syscall.h"
 #include "defs.h"
 
+// 1.系统调用参数获取
 // Fetch the uint64 at addr from the current process.
+// 从用户空间安全地获取地址值
 int
 fetchaddr(uint64 addr, uint64 *ip)
 {
@@ -21,6 +23,7 @@ fetchaddr(uint64 addr, uint64 *ip)
 
 // Fetch the nul-terminated string at addr from the current process.
 // Returns length of string, not including nul, or -1 for error.
+// 从用户空间安全地获取字符串
 int
 fetchstr(uint64 addr, char *buf, int max)
 {
@@ -31,6 +34,7 @@ fetchstr(uint64 addr, char *buf, int max)
   return strlen(buf);
 }
 
+// 从寄存器直接获取原始参数
 static uint64
 argraw(int n)
 {
@@ -53,6 +57,7 @@ argraw(int n)
   return -1;
 }
 
+// argint()/argaddr()/argstr() - 处理寄存器获取的不同类型参数
 // Fetch the nth 32-bit system call argument.
 int
 argint(int n, int *ip)
@@ -104,9 +109,15 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_trace(void);
 
+// 2.系统调用表管理
+/*static: 限制该数组只在当前文件可见
+uint64: 函数返回值类型(64位无符号整数)
+(*syscalls[]): 表示"指向函数的指针"的数组
+(void): 这些函数不接受参数*/
 static uint64 (*syscalls[])(void) = {
-[SYS_fork]    sys_fork,
+[SYS_fork]    sys_fork,   // 表示将数组索引为SYS_fork的元素初始化为sys_fork函数的地址
 [SYS_exit]    sys_exit,
 [SYS_wait]    sys_wait,
 [SYS_pipe]    sys_pipe,
@@ -127,17 +138,52 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace,
 };
 
+// 系统调用名称数组
+static char *syscall_names[] = {
+[SYS_fork]    "fork",
+[SYS_exit]    "exit",
+[SYS_wait]    "wait",
+[SYS_pipe]    "pipe",
+[SYS_read]    "read",
+[SYS_kill]    "kill",
+[SYS_exec]    "exec",
+[SYS_fstat]   "fstat",
+[SYS_chdir]   "chdir",
+[SYS_dup]     "dup",
+[SYS_getpid]  "getpid",
+[SYS_sbrk]    "sbrk",
+[SYS_sleep]   "sleep",
+[SYS_uptime]  "uptime",
+[SYS_open]    "open",
+[SYS_write]   "write",
+[SYS_mknod]   "mknod",
+[SYS_unlink]  "unlink",
+[SYS_link]    "link",
+[SYS_mkdir]   "mkdir",
+[SYS_close]   "close",
+[SYS_trace]   "trace",
+};
+
+// 3.系统调用分发
 void
 syscall(void)
 {
   int num;
-  struct proc *p = myproc();
+  struct proc *p = myproc();  // 进程相关信息的结构体
 
-  num = p->trapframe->a7;
+  num = p->trapframe->a7;   // 从a7获取系统调用号
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    p->trapframe->a0 = syscalls[num]();
+     uint64 result = syscalls[num]();   // 调用处理函数并存储返回值
+     p->trapframe->a0 = result;
+    // trace
+    if(p->trace_mask & (1<<num)){
+      // 打印进程id、系统调用的名称和返回值
+      printf("%d: syscall %s -> %d\n",p->pid, syscall_names[num], result);
+    }
+
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

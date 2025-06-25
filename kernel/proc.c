@@ -266,8 +266,8 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
-
-  // Copy user memory from parent to child.
+  // 子进程获得父进程整个用户空间内存的副本
+  // Copy user memory from parent to child. 
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
@@ -276,17 +276,25 @@ fork(void)
   np->sz = p->sz;
 
   np->parent = p;
-
+  
+  // 寄存器状态 包括程序计数器，使子进程从与父进程相同的位置继续执行
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
+  // 子进程继承父进程的跟踪掩码
+  np->trace_mask = p->trace_mask;
+
+  // 子进程的返回值设置为0
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
+  // 所有文件描述符都被继承
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
+  
+  // 工作目录
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
@@ -693,3 +701,5 @@ procdump(void)
     printf("\n");
   }
 }
+
+
