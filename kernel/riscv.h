@@ -350,5 +350,5 @@ sfence_vma()
 // that have the high bit set.
 #define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
 
-typedef uint64 pte_t;
-typedef uint64 *pagetable_t; // 512 PTEs
+typedef uint64 pte_t; // 页表项
+typedef uint64 *pagetable_t; // 512 PTEs 页表指针

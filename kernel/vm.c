@@ -15,31 +15,27 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
-/*
- * create a direct-map page table for the kernel.
- */
+// 建立内核的直接映射页表，确保虚拟地址等于物理地址
 void
 kvminit()
 {
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
 
+  // 映射设备寄存器
   // uart registers
   kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
-
   // virtio mmio disk interface
   kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-
   // CLINT
   kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
-
   // PLIC
   kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
-  // map kernel text executable and read-only.
+  // 映射内核代码段(只读+可执行)
   kvmmap(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
 
-  // map kernel data and the physical RAM we'll make use of.
+  // 映射内核数据段(读写)
   kvmmap((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
 
   // map the trampoline for trap entry/exit to
@@ -71,9 +67,10 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
+  // 检查虚拟地址是否有效
   if(va >= MAXVA)
     panic("walk");
-
+  // 从level-2开始向下遍历到level-1，不包括level-0(最后单独处理)
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
     if(*pte & PTE_V) {
@@ -440,3 +437,35 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// 递归打印中间级页表
+void
+_vmprint(pagetable_t pagetable, int level)
+{
+  // 每级页表的条目数最大为512  因为每级页号占9位
+  // 遍历当前页表的每一个页表项
+  for(int i=0; i<512; i++){
+    // 获取页表项
+    pte_t pte=pagetable[i];   // pte是一个64位的二进制位图
+    // PTE_V 判断页表是否有效
+    if(pte & PTE_V){
+      for(int i=0; i<2-level; i++){
+        printf(".. ");
+      }
+      printf("..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+      // (pte & (PTE_R|PTE_W|PTE_X)) == 0则是用来判断是否为最后一层页表。
+      // 因为最后一层页表中页表项中W位，R位，X位至少有一位会被设置为1，而中间级页表W位，R位，X位都为0
+      if((pte & (PTE_R | PTE_W | PTE_X))==0){
+        pagetable_t child=(pagetable_t)PTE2PA(pte);
+        _vmprint(child, level-1);
+      }
+    }
+  }
+}
+
+void 
+vmprint(pagetable_t pagetable)
+{
+  _vmprint(pagetable, 2);
+}
+

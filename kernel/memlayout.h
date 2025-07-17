@@ -1,4 +1,4 @@
-// Physical memory layout
+// xv6物理内存布局
 
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:
@@ -65,3 +65,31 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+
+
+/*
+虚拟地址空间从高到低的布局：
+MAXVA           ┌─────────────────┐
+                │   TRAMPOLINE    │ ← 最高地址页面
+                ├─────────────────┤
+                │   TRAPFRAME     │ ← 陷阱帧页面
+                ├─────────────────┤
+                │   Guard Page    │ ← 保护页(无效)
+                ├─────────────────┤
+                │  KSTACK(0)      │ ← 进程0的内核栈
+                ├─────────────────┤
+                │   Guard Page    │
+                ├─────────────────┤
+                │  KSTACK(1)      │ ← 进程1的内核栈
+                ├─────────────────┤
+                │      ...        │
+                ├─────────────────┤
+                │  用户堆空间      │
+                ├─────────────────┤
+                │  用户栈空间      │
+                ├─────────────────┤
+                │  用户数据段      │
+                ├─────────────────┤
+0x0             │  用户代码段      │ ← 最低地址
+                └─────────────────┘
+*/
