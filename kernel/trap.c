@@ -50,6 +50,7 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
+  // 如果是系统调用导致的陷入
   if(r_scause() == 8){
     // system call
 
@@ -77,8 +78,17 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    if(++p->ticks_count == p->alarm_interval && p->is_alarming == 0 && p->alarm_interval != 0){  // 滴答次数等于了时钟间隔 没有在运行的报警程序 设置了报警间隔
+      // 首先，保存寄存器的内容
+      memmove(p->alarm_trapframe, p->trapframe, sizeof(struct trapframe));
+      // 再，更改陷阱帧中保留的程序计数器，已执行alarm程序
+      p->trapframe->epc = (uint64)p->alarm_handler;
+      p->ticks_count = 0;
+      p->is_alarming = 1;
+    }
     yield();
+  }
 
   usertrapret();
 }

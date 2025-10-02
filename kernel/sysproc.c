@@ -99,3 +99,26 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  // 获取从用户空间传入的参数：
+  // 从a0寄存器获取时钟间隔，保存到myproc()->alarm_interval指针中
+  // 从a1寄存器获取报警处理程序地址，保存到myproc()->alarm_handler指针中
+  if(argint(0, &myproc()->alarm_interval) < 0 ||
+    argaddr(1, (uint64*)&myproc()->alarm_handler) < 0)
+    return -1;
+
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  // 用户空间的报警处理函数完成后，调用sigreturn，返回到最开始用户程序中断的地方去
+  // 恢复用户程序上下文
+  memmove(myproc()->trapframe, myproc()->alarm_trapframe, sizeof(struct trapframe));
+  myproc()->is_alarming = 0;
+  return 0;
+}
