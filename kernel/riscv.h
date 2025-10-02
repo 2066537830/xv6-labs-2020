@@ -352,3 +352,12 @@ sfence_vma()
 
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
+
+static inline uint64  // static: 限制函数作用域在当前文件 inline:建议编译器内联展开，避免函数调用开销
+r_fp()
+{
+  uint64 x;
+  // 从帧指针寄存器s0(fp)中读取当前栈帧的基地址
+  asm volatile("mv %0, s0" : "=r" (x) );   // asm:内联汇编关键字 volatitle:告诉编译器不要优化这段汇编代码
+  return x;
+}

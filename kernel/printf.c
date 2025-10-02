@@ -132,3 +132,21 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void
+backtrace(void)
+{
+  printf("backtrace:\n");
+  // 获取当前函数的帧指针
+  uint64 fp = r_fp();
+  // 计算栈页面的最高位地址
+  uint64 top = PGROUNDUP(fp);
+
+  // 遍历栈帧
+  while(fp<top){
+    uint64 ra =*(uint64*)(fp-8); // fp-8是保存调用当前函数的地址的指针 ——> 函数代码位置
+    printf("%p\n", ra);
+    uint64 prev_fp = *(uint64*)(fp-16); // fp-16是保存前一个栈帧的地址的指针 ——> 栈帧
+    fp=prev_fp;
+  }
+}
