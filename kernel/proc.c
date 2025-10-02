@@ -30,16 +30,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
   }
   kvminithart();
 }
@@ -93,10 +83,10 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-
+  // 遍历进程列表
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
-    if(p->state == UNUSED) {
+    if(p->state == UNUSED) {   // 寻找状态为 UNUSED 的进程
       goto found;
     } else {
       release(&p->lock);
@@ -106,7 +96,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-
+  
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
@@ -120,6 +110,23 @@ found:
     release(&p->lock);
     return 0;
   }
+  // 进程内核页表
+  p->kernel_pagetable = proc_kpagetable_init();
+  if(p->kernel_pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // Allocate a page for the process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc)); // 计算该进程在内核栈的虚拟地址
+  uvmmap(p->kernel_pagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W); // 将内核栈映射到进程内核表中
+  p->kstack = va;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -128,6 +135,26 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   return p;
+}
+
+// 释放进程的内核页表
+void
+proc_free_kpagetable(pagetable_t kpagetable)
+{
+  // 清除页表中所有有效的页表项（置0），如果该页表项不在最后一级页表上，递归清除
+  // 一个页表有512个页表项
+  for(int i=0; i<512; i++){
+    pte_t pte = kpagetable[i];
+    if(pte & PTE_V){  // 页表项有效
+      kpagetable[i] = 0;
+      // 如果不是最后一级页表
+      if((pte & (PTE_R | PTE_W | PTE_X)) == 0){
+        uint64 child_pagetable = PTE2PA(pte);
+        proc_free_kpagetable((pagetable_t)child_pagetable); //强制转换数据类型，避免编译器报错
+      }
+    }
+  }
+  kfree((void*)kpagetable);   // 将这个空白页面添加到空闲链表上
 }
 
 // free a proc structure and the data hanging from it,
@@ -150,6 +177,11 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  // 释放进程的内核页表的内核栈
+  uvmunmap(p->kernel_pagetable, p->kstack, 1, 1);
+  p->kstack=0;
+  // 释放进程内核页表
+  proc_free_kpagetable(p->kernel_pagetable);
 }
 
 // Create a user page table for a given process,
@@ -221,6 +253,9 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  // 复制页表
+  u2kvmcopy(p->pagetable, p->kernel_pagetable, 0, p->sz);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -243,12 +278,19 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    // PLIC限制 用户空间的虚拟地址不能高于PLIC
+    if(PGROUNDUP(sz + n) >= PLIC){
+      return -1;
+    }
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    // 复制页表
+    u2kvmcopy(p->pagetable, p->kernel_pagetable, sz - n, sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  
   p->sz = sz;
   return 0;
 }
@@ -274,6 +316,9 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  // 复制页表
+  u2kvmcopy(np->pagetable, np->kernel_pagetable, 0, np->sz);
 
   np->parent = p;
 
@@ -473,8 +518,11 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // 将用户进程的内核页表到SATP
+        proc_kpagetable_inithart(p->kernel_pagetable);
         swtch(&c->context, &p->context);
-
+        // 恢复内核页表
+        kvminithart();
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -697,3 +745,25 @@ procdump(void)
     printf("\n");
   }
 }
+
+// 将用户页表复制到进程内核页表
+void
+u2kvmcopy(pagetable_t pagetable, pagetable_t kpagetable, uint64 oldsz, uint64 newsz){
+  pte_t *pte_src, *pte_dis;
+  oldsz = PGROUNDUP(oldsz); // 	拷贝的起始地址（虚拟地址）
+  // 遍历虚拟地址 i，步长是页大小（4096），对每一页做处理
+  for(uint64 i = oldsz; i < newsz; i += PGSIZE){
+    // 从用户页表中找到虚拟地址 i 对应的页表项
+    if((pte_src = walk(pagetable, i, 0)) == 0){
+      panic("u2kvmcopy: src pte does not exist");
+    }
+    // 在进程的内核页表 kernelpt 中，创建或找到与 i 对应的页表项（会创建中间页表）
+    if((pte_dis = walk(kpagetable, i, 1)) == 0){
+      panic("u2kvmcopy: pte walk failed");
+    }
+    uint64 pa = PTE2PA(*pte_src);   // 获取用户空间虚拟地址对应的物理地址
+    uint flags = (PTE_FLAGS(*pte_src)) & (~PTE_U); // 提取原页表项的 flag（权限位）, 去掉用户权限
+    *pte_dis = PA2PTE(pa) | flags;
+  }
+}
+
