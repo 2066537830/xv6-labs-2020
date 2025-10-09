@@ -47,8 +47,11 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+  // 删除分配内存的代码
+  // if(growproc(n) < 0)
+  //   return -1;
+  // 增加进程的内存大小
+  myproc()->sz = addr + n;
   return addr;
 }
 
