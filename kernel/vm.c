@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -181,7 +183,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
       continue;
     if(PTE_FLAGS(*pte) == PTE_V)
@@ -315,9 +317,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -355,12 +357,14 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+    if(pa0 == 0){
+      if(lazymalloc(dstva) != 0){
+        return -1;
+      }
+    }
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -380,12 +384,14 @@ int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
-
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+    if(pa0 == 0){
+      if(lazymalloc(srcva) != 0){
+        return -1;
+      }
+    }
     n = PGSIZE - (srcva - va0);
     if(n > len)
       n = len;
@@ -407,12 +413,15 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
   uint64 n, va0, pa0;
   int got_null = 0;
-
   while(got_null == 0 && max > 0){
+    
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+    if(pa0 == 0){
+      if(lazymalloc(srcva) != 0){
+        return -1;
+      }
+    }
     n = PGSIZE - (srcva - va0);
     if(n > max)
       n = max;
@@ -437,6 +446,28 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   if(got_null){
     return 0;
   } else {
+    return -1;
+  }
+}
+
+int
+lazymalloc(uint64 va)
+{
+  struct proc* p = myproc();
+  if(va < p->sz && va >= PGROUNDUP(p->trapframe->sp)){
+    uint64 ka = (uint64)kalloc();
+    if(ka == 0){
+      return -1;
+    } else{
+      memset((void*)ka, 0, PGSIZE);
+      if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, ka, PTE_R | PTE_W | PTE_U) != 0){
+        kfree((void*)ka);
+        return -1;
+      } else{
+        return 0;
+      }
+    }
+  } else{
     return -1;
   }
 }

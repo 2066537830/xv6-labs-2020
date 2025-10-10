@@ -41,17 +41,25 @@ sys_wait(void)
 uint64
 sys_sbrk(void)
 {
-  int addr;
+  uint64 addr;
   int n;
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  // 删除分配内存的代码
-  // if(growproc(n) < 0)
-  //   return -1;
-  // 增加进程的内存大小
-  myproc()->sz = addr + n;
+  struct proc* p = myproc();
+  addr = p->sz;
+  uint64 sz = p->sz;
+  if(n > 0){
+    if(p->sz + n > MAXVA){
+      return -1;
+    }
+    p->sz += n;
+  } else if((sz + n) > 0){
+    sz = uvmdealloc(p->pagetable, sz, sz + n);
+    p->sz = sz;
+  } else{
+    return -1;
+  }
   return addr;
 }
 

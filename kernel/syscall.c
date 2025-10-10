@@ -64,10 +64,18 @@ argint(int n, int *ip)
 // Retrieve an argument as a pointer.
 // Doesn't check for legality, since
 // copyin/copyout will do that.
+// 系统调用获取用户传入的虚拟地址，可能是懒加载的，分配物理地址
 int
 argaddr(int n, uint64 *ip)
 {
   *ip = argraw(n);
+  uint64 addr = *ip;
+  struct proc* p = myproc();
+  if(walkaddr(p->pagetable, addr) == 0){
+    if(lazymalloc(addr) != 0){
+      return -1;
+    }
+  }
   return 0;
 }
 
