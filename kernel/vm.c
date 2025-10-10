@@ -364,6 +364,10 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       if(lazymalloc(dstva) != 0){
         return -1;
       }
+      pa0 = walkaddr(pagetable, va0);
+      if(pa0 == 0) {
+        return -1; 
+      }
     }
     n = PGSIZE - (dstva - va0);
     if(n > len)
@@ -390,6 +394,10 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     if(pa0 == 0){
       if(lazymalloc(srcva) != 0){
         return -1;
+      }
+      pa0 = walkaddr(pagetable, va0);
+      if(pa0 == 0) {
+        return -1; 
       }
     }
     n = PGSIZE - (srcva - va0);
@@ -420,6 +428,10 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     if(pa0 == 0){
       if(lazymalloc(srcva) != 0){
         return -1;
+      }
+      pa0 = walkaddr(pagetable, va0);
+      if(pa0 == 0) {
+        return -1; 
       }
     }
     n = PGSIZE - (srcva - va0);
