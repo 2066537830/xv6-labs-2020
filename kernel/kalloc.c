@@ -21,12 +21,17 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  // 初始化所有的锁
+  char lockname[8];
+  for(int i=0; i<NCPU; i++){
+    snprintf(lockname, sizeof(lockname), "kmem_%d", i); // 参数：buf, buf大小, 格式化字符串模板, 可变参数
+    initlock(&kmem[i].lock, lockname);
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -56,10 +61,13 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  push_off(); // 关闭中断
+  int id=cpuid();
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
+  pop_off();  // 打开中断
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -70,12 +78,33 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  push_off();
+  int id=cpuid();
+  acquire(&kmem[id].lock);
+  r = kmem[id].freelist;
+  // 如果当前cpu有空闲链表，直接使用
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
-
+    kmem[id].freelist = r->next;
+  // 如果没有，则窃取其他cpu的
+  else {
+    int cup_id;
+    // 遍历所有cpu的空闲列表
+    for(cup_id=0; cup_id<NCPU; cup_id++){
+      if(cup_id==id){
+        continue;
+      }
+      acquire(&kmem[cup_id].lock);
+      r = kmem[cup_id].freelist;
+      if(r){
+        kmem[cup_id].freelist = r->next;
+        release(&kmem[cup_id].lock);
+        break;
+      }
+      release(&kmem[cup_id].lock);
+    }
+  }
+  release(&kmem[id].lock);
+  pop_off();
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
