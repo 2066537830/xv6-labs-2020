@@ -380,18 +380,26 @@ bmap(struct inode *ip, uint bn)
   uint addr, *a;
   struct buf *bp;
 
+
+  // bn:0-10 -> 访问直接块 addr[0]-addr[10]
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
       ip->addrs[bn] = addr = balloc(ip->dev);
     return addr;
   }
+  // 调整块号：将文件全局块号转换为间接块内的相对索引
+  // 例如：文件块13 -> 间接块索引2 (13-11=2)
   bn -= NDIRECT;
 
+  // bn:0-255 -> 访问一级间接块 addr[11]
   if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
+    // 检查间接块是否已分配（ip->addrs[11]存储间接块地址）
     if((addr = ip->addrs[NDIRECT]) == 0)
+      // 如果间接块未分配，分配一个新的磁盘块作为间接块
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+    // 从磁盘读取间接块到缓冲区
     bp = bread(ip->dev, addr);
+    // 将缓冲区数据解释为uint数组（每个元素是一个磁盘块地址）
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->dev);
@@ -400,7 +408,42 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
 
+  // 访问二级间接块
+  if(bn<NDINDIRECT){
+    // 查找一级间接块中二级间接块的地址索引
+    int level1_index = bn / NADDR_PER_BLOCK;
+    // 查找二级间接块中数据块的地址索引
+    int level2_index = bn % NADDR_PER_BLOCK;
+  
+    // 如果一级间接块未分配
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+        // 如果间接块未分配，分配一个新的磁盘块作为一级间接块
+        ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+      // 从磁盘读取间接块到缓冲区
+      bp = bread(ip->dev, addr);
+      // 将缓冲区数据解释为uint数组（每个元素是一个磁盘块地址）
+      a = (uint*)bp->data;
+      
+      if((addr = a[level1_index]) == 0){
+        a[level1_index] = addr = balloc(ip->dev);
+        log_write(bp);
+      }
+      brelse(bp);
+      // 重新读取一级间接块
+      bp = bread(ip->dev, addr);
+      // a相当于二级间接块的起始地址
+      a = (uint*)bp->data;
+
+      // 如果二级地址中level2_index未映射
+      if((addr = a[level2_index]) == 0){
+        a[level2_index] = addr = balloc(ip->dev);
+        log_write(bp);
+      }
+      brelse(bp);
+      return addr;
+  }
   panic("bmap: out of range");
 }
 
@@ -430,6 +473,31 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  struct buf *bp1;
+  uint *a1;
+  if(ip->addrs[NDIRECT+1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);  // 块
+    a = (uint*)bp->data;  // 块中的地址
+    // 访问一级间接块
+    for(i=0; i<NADDR_PER_BLOCK; i++){
+      if(a[i]){
+        bp1 = bread(ip->dev, a[i]);
+        a1 = (uint*)bp1->data;
+        // 访问二级间接块
+        for(j=0; j<NADDR_PER_BLOCK; j++){
+          if(a1[j]){
+            bfree(ip->dev, a1[j]);  // 释放数据块
+          }
+          brelse(bp1);
+          bfree(ip->dev, a[i]); // 释放二级块
+        }
+      }
+      brelse(bp);
+      bfree(ip->dev, ip->addrs[NDIRECT + 1]); // 释放一级块
+      ip->addrs[NDIRECT+1] = 0;
+    }
   }
 
   ip->size = 0;
