@@ -24,9 +24,9 @@ struct superblock {
 
 #define FSMAGIC 0x10203040
 
-#define NDIRECT 11  // 直接块的数量
-#define NINDIRECT (BSIZE / sizeof(uint))  // 一个间接块中的地址数量
-#define NDINDIRECT ((BSIZE / sizeof(uint)) * (BSIZE / sizeof(uint))) // 一个二级间接块中的地址数量
+#define NDIRECT 11  // 直接连接的数据块的数量
+#define NINDIRECT (BSIZE / sizeof(uint))  // 一级间接块中数据块的数量
+#define NDINDIRECT ((BSIZE / sizeof(uint)) * (BSIZE / sizeof(uint))) // 二级间接块中数据块的数量
 #define MAXFILE (NDIRECT + NINDIRECT + NDINDIRECT)  // 最大文件大小 = 11+256+256*256
 #define NADDR_PER_BLOCK (BSIZE / sizeof(uint))  // 一个块中的地址数量
 
